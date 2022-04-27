@@ -3,3 +3,7 @@ __pycache__/
 
 # Rope project settings
 .ropeproject
+
+.idea/
+
+*.egg-info/
