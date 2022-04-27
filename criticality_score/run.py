@@ -29,7 +29,7 @@ import github
 import gitlab
 import requests
 
-from .defaults import *  # pylint: disable=wildcard-import
+from defaults import *  # pylint: disable=wildcard-import
 
 logger = logging.getLogger()
 
@@ -42,9 +42,12 @@ PARAMS = [
     'closed_issues_count', 'comment_frequency', 'dependents_count'
 ]
 
+UNTIL: datetime.datetime = None
+
 
 class Repository:
     """General source repository."""
+
     def __init__(self, repo):
         self._repo = repo
         self._last_commit = None
@@ -131,7 +134,7 @@ class Repository:
             if result.status_code == 200:
                 match = DEPENDENTS_REGEX.match(result.content)
                 break
-            time.sleep(2**i)
+            time.sleep(2 ** i)
         if not match:
             return 0
         return int(match.group(1).replace(b',', b''))
@@ -139,6 +142,7 @@ class Repository:
 
 class GitHubRepository(Repository):
     """Source repository hosted on GitHub."""
+
     # General metadata attributes.
     @property
     def name(self):
@@ -192,7 +196,7 @@ class GitHubRepository(Repository):
                         commits[-1]['commit']['committer']['date'])
                     return datetime.datetime.strptime(last_commit_time_string,
                                                       "%Y-%m-%dT%H:%M:%SZ")
-            time.sleep(2**i)
+            time.sleep(2 ** i)
 
         return None
 
@@ -212,14 +216,17 @@ class GitHubRepository(Repository):
             first_commit_time = self.get_first_commit_time()
             if first_commit_time:
                 creation_time = min(creation_time, first_commit_time)
-
-        difference = datetime.datetime.utcnow() - creation_time
+        timepoint = UNTIL if UNTIL else datetime.datetime.utcnow()
+        difference = timepoint - creation_time
         self._created_since = round(difference.days / 30)
         return self._created_since
 
     @property
     def updated_since(self):
-        last_commit_time = self.last_commit.commit.author.date
+        if UNTIL:
+            last_commit_time = self._repo.get_commits(until=UNTIL)[0].commit.author.date
+        else:
+            last_commit_time = self.last_commit.commit.author.date
         difference = datetime.datetime.utcnow() - last_commit_time
         return round(difference.days / 30)
 
@@ -255,8 +262,13 @@ class GitHubRepository(Repository):
     @property
     def commit_frequency(self):
         total = 0
-        for week_stat in self._repo.get_stats_commit_activity():
-            total += week_stat.total
+        if UNTIL:
+            commits_last_year = self._repo.get_commits(until=UNTIL, since=UNTIL - datetime.timedelta(weeks=52))
+            total += commits_last_year.totalCount
+        else:
+            last_year_activities = self._repo.get_stats_commit_activity()
+            for week_stat in last_year_activities:
+                total += week_stat.total
         return round(total / 52, 1)
 
     @property
@@ -264,7 +276,7 @@ class GitHubRepository(Repository):
         total = 0
         for release in self._repo.get_releases():
             if (datetime.datetime.utcnow() -
-                    release.created_at).days > RELEASE_LOOKBACK_DAYS:
+                release.created_at).days > RELEASE_LOOKBACK_DAYS:
                 continue
             total += 1
         if not total:
@@ -314,6 +326,7 @@ class GitHubRepository(Repository):
 
 class GitLabRepository(Repository):
     """Source repository hosted on GitLab."""
+
     @staticmethod
     def _date_from_string(date_string):
         return datetime.datetime.strptime(date_string,
@@ -356,7 +369,7 @@ class GitLabRepository(Repository):
     def updated_since(self):
         difference = datetime.datetime.now(
             datetime.timezone.utc) - self._date_from_string(
-                self.last_commit.created_at)
+            self.last_commit.created_at)
         return round(difference.days / 30)
 
     @property
@@ -384,7 +397,7 @@ class GitLabRepository(Repository):
         for release in self._repo.releases.list():
             release_time = self._date_from_string(release.released_at)
             if (datetime.datetime.now(datetime.timezone.utc) -
-                    release_time).days > RELEASE_LOOKBACK_DAYS:
+                release_time).days > RELEASE_LOOKBACK_DAYS:
                 break
             count += 1
         count = 0
@@ -392,7 +405,7 @@ class GitLabRepository(Repository):
             for tag in self._repo.tags.list():
                 tag_time = self._date_from_string(tag.commit['created_at'])
                 if (datetime.datetime.now(datetime.timezone.utc) -
-                        tag_time).days > RELEASE_LOOKBACK_DAYS:
+                    tag_time).days > RELEASE_LOOKBACK_DAYS:
                     break
                 count += 1
         return count
@@ -491,25 +504,25 @@ def get_repository_score(repo_stats, additional_params=None):
 
     criticality_score = round(
         ((get_param_score(float(repo_stats['created_since']),
-            CREATED_SINCE_THRESHOLD, CREATED_SINCE_WEIGHT)) +
+                          CREATED_SINCE_THRESHOLD, CREATED_SINCE_WEIGHT)) +
          (get_param_score(float(repo_stats['updated_since']),
-             UPDATED_SINCE_THRESHOLD, UPDATED_SINCE_WEIGHT)) +
+                          UPDATED_SINCE_THRESHOLD, UPDATED_SINCE_WEIGHT)) +
          (get_param_score(float(repo_stats['contributor_count']),
-             CONTRIBUTOR_COUNT_THRESHOLD, CONTRIBUTOR_COUNT_WEIGHT)) +
+                          CONTRIBUTOR_COUNT_THRESHOLD, CONTRIBUTOR_COUNT_WEIGHT)) +
          (get_param_score(float(repo_stats['org_count']),
-             ORG_COUNT_THRESHOLD, ORG_COUNT_WEIGHT)) +
+                          ORG_COUNT_THRESHOLD, ORG_COUNT_WEIGHT)) +
          (get_param_score(float(repo_stats['commit_frequency']),
-             COMMIT_FREQUENCY_THRESHOLD, COMMIT_FREQUENCY_WEIGHT)) +
+                          COMMIT_FREQUENCY_THRESHOLD, COMMIT_FREQUENCY_WEIGHT)) +
          (get_param_score(float(repo_stats['recent_releases_count']),
-             RECENT_RELEASES_THRESHOLD, RECENT_RELEASES_WEIGHT)) +
+                          RECENT_RELEASES_THRESHOLD, RECENT_RELEASES_WEIGHT)) +
          (get_param_score(float(repo_stats['closed_issues_count']),
-             CLOSED_ISSUES_THRESHOLD, CLOSED_ISSUES_WEIGHT)) +
+                          CLOSED_ISSUES_THRESHOLD, CLOSED_ISSUES_WEIGHT)) +
          (get_param_score(float(repo_stats['updated_issues_count']),
-             UPDATED_ISSUES_THRESHOLD, UPDATED_ISSUES_WEIGHT)) +
+                          UPDATED_ISSUES_THRESHOLD, UPDATED_ISSUES_WEIGHT)) +
          (get_param_score(float(repo_stats['comment_frequency']),
-             COMMENT_FREQUENCY_THRESHOLD, COMMENT_FREQUENCY_WEIGHT)) +
+                          COMMENT_FREQUENCY_THRESHOLD, COMMENT_FREQUENCY_WEIGHT)) +
          (get_param_score(float(repo_stats['dependents_count']),
-             DEPENDENTS_COUNT_THRESHOLD, DEPENDENTS_COUNT_WEIGHT)) +
+                          DEPENDENTS_COUNT_THRESHOLD, DEPENDENTS_COUNT_WEIGHT)) +
          additional_params_score) /
         total_weight, 5)
 
@@ -549,7 +562,7 @@ def get_repository_score_from_local_csv(file_path, params=None):
             logger.debug(row)
 
             calc_params = []
-            for key,weight,max_threshold in additional_params:
+            for key, weight, max_threshold in additional_params:
                 calc_params.append(f"{row[key]}:{weight}:{max_threshold}")
 
             row["criticality_score"] = get_repository_score(row, calc_params)
@@ -653,7 +666,7 @@ def initialize_logging_handlers():
 
 def override_params(override_params):
     for override_param in override_params:
-        temp = override_param.split(':',1)
+        temp = override_param.split(':', 1)
         param_name = temp[0]
         try:
             weight, threshold = [
@@ -712,12 +725,12 @@ def main():
         description='Gives criticality score for an open source project')
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--repo",
-                        type=str,
-                        help="repository url")
+                       type=str,
+                       help="repository url")
     group.add_argument("--local-file",
-            type=str,
-            dest="l_file",
-            help="path of a local csv file with repo stats")
+                       type=str,
+                       dest="l_file",
+                       help="path of a local csv file with repo stats")
     parser.add_argument(
         "--format",
         type=str,
@@ -736,11 +749,26 @@ def main():
         default=[],
         help='Overriding parameters in form <name>:<weight>:<max_threshold>',
         required=False)
+    parser.add_argument(
+        '--until',
+        type=str,
+        default='',
+        help='Constraint the parameter in the given timepoint',
+        required=False)
 
     initialize_logging_handlers()
     args = parser.parse_args()
     if args.overrides:
         override_params(args.overrides)
+
+    if args.until:
+        global UNTIL
+        try:
+            UNTIL = datetime.datetime.strptime(args.until, '%Y-%m-%d')
+        except (TypeError, ValueError) as e:
+            logger.warning(
+                f'Invalid parameter "until"(type datetime in format YYYY-MM-DD): {e}, skip')
+            UNTIL = None
 
     output = None
     if args.repo:
