@@ -127,8 +127,14 @@ class Repository:
         match = None
         parsed_url = urllib.parse.urlparse(self.url)
         repo_name = parsed_url.path.strip('/')
+        # Construct the query string by github search docs:
+        # https://docs.github.com/en/search-github/searching-on-github/searching-commits#search-by-authored-or-committed-date
+        # Notice: The search result is not accurate
+        q = f'{repo_name}'
+        if UNTIL:
+            q = f'{q}+author-date%3A<{UNTIL.strftime("YYYY-MM-DD")}'
         dependents_url = (
-            f'https://github.com/search?q="{repo_name}"&type=commits')
+            f'https://github.com/search?q="{q}"&type=commits')
         for i in range(FAIL_RETRIES):
             result = self._request_url_with_auth_headers(dependents_url)
             if result.status_code == 200:
@@ -216,8 +222,8 @@ class GitHubRepository(Repository):
             first_commit_time = self.get_first_commit_time()
             if first_commit_time:
                 creation_time = min(creation_time, first_commit_time)
-        timepoint = UNTIL if UNTIL else datetime.datetime.utcnow()
-        difference = timepoint - creation_time
+        time_point = UNTIL if UNTIL else datetime.datetime.utcnow()
+        difference = time_point - creation_time
         self._created_since = round(difference.days / 30)
         return self._created_since
 
@@ -274,9 +280,9 @@ class GitHubRepository(Repository):
     @property
     def recent_releases_count(self):
         total = 0
+        time_point = UNTIL if UNTIL else datetime.datetime.utcnow()
         for release in self._repo.get_releases():
-            if (datetime.datetime.utcnow() -
-                release.created_at).days > RELEASE_LOOKBACK_DAYS:
+            if (time_point - release.created_at).days > RELEASE_LOOKBACK_DAYS:
                 continue
             total += 1
         if not total:
@@ -299,21 +305,24 @@ class GitHubRepository(Repository):
 
     @property
     def updated_issues_count(self):
-        issues_since_time = datetime.datetime.utcnow() - datetime.timedelta(
+        time_point = UNTIL if UNTIL else datetime.datetime.utcnow()
+        issues_since_time = time_point - datetime.timedelta(
             days=ISSUE_LOOKBACK_DAYS)
         return self._repo.get_issues(state='all',
                                      since=issues_since_time).totalCount
 
     @property
     def closed_issues_count(self):
-        issues_since_time = datetime.datetime.utcnow() - datetime.timedelta(
+        time_point = UNTIL if UNTIL else datetime.datetime.utcnow()
+        issues_since_time = time_point - datetime.timedelta(
             days=ISSUE_LOOKBACK_DAYS)
         return self._repo.get_issues(state='closed',
                                      since=issues_since_time).totalCount
 
     @property
     def comment_frequency(self):
-        issues_since_time = datetime.datetime.utcnow() - datetime.timedelta(
+        time_point = UNTIL if UNTIL else datetime.datetime.utcnow()
+        issues_since_time = time_point - datetime.timedelta(
             days=ISSUE_LOOKBACK_DAYS)
         issue_count = self._repo.get_issues(state='all',
                                             since=issues_since_time).totalCount
