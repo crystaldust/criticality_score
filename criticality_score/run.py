@@ -29,7 +29,7 @@ import github
 import gitlab
 import requests
 
-from defaults import *  # pylint: disable=wildcard-import
+from .defaults import *  # pylint: disable=wildcard-import
 
 logger = logging.getLogger()
 
@@ -37,10 +37,16 @@ _CACHED_GITHUB_TOKEN = None
 _CACHED_GITHUB_TOKEN_OBJ = None
 
 PARAMS = [
-    'description', 'created_since', 'updated_since', 'contributor_count', 'watchers_count', 'org_count',
-    'commit_frequency', 'recent_releases_count', 'updated_issues_count',
-    'closed_issues_count', 'comment_frequency', 'dependents_count'
+    'description', 'created_since', 'updated_since', 'watchers_count',
+    'commit_frequency', 'recent_releases_count', 'dependents_count'
 ]
+
+# contributor_count
+# org_count
+#
+# updated_issues_count
+# closed_issues_count
+# comment_frequency
 
 UNTIL: datetime.datetime = None
 
@@ -541,15 +547,27 @@ def get_repository_score(repo_stats, additional_params=None):
     return criticality_score
 
 
-def get_repository_score_from_raw_stats(repo_url, params=None):
+def get_repository_params_from_raw_stats(repo_url, params=None, until=None):
     """Get repository's criticality_score based on raw signal data."""
+    global UNTIL
+    if not UNTIL and until:
+        UNTIL = until
+
     repo = get_repository(repo_url)
     if repo is None:
         logger.error(f'Repo is not found: {repo_url}')
         return
     repo_stats = get_repository_stats(repo)
-    repo_stats["criticality_score"] = get_repository_score(repo_stats, params)
 
+    return repo_stats
+
+
+def get_repository_score_from_raw_stats(repo_stats, params=None, until=None):
+    global UNTIL
+    if not UNTIL and until:
+        UNTIL = until
+
+    repo_stats["criticality_score"] = get_repository_score(repo_stats, params)
     return repo_stats
 
 
@@ -604,7 +622,7 @@ def get_github_auth_token():
     min_wait_time = None
     token_obj = None
     for token in tokens:
-        token_obj = github.Github(token)
+        token_obj = github.Github(token, per_page=100)
         near_expiry, wait_time = get_github_token_info(token_obj)
         if not min_wait_time or wait_time < min_wait_time:
             min_wait_time = wait_time
