@@ -139,11 +139,12 @@ class Repository:
         # Construct the query string by github search docs:
         # https://docs.github.com/en/search-github/searching-on-github/searching-commits#search-by-authored-or-committed-date
         # Notice: The search result is not accurate
-        q = f'{repo_name}'
+        q = f'"{repo_name}"'
+        # sample: https://github.com/search?q="librosa/librosa"+author-date:<2021-05-01&type=Commits
         if UNTIL:
-            q = f'{q}+author-date%3A<{UNTIL.strftime("YYYY-MM-DD")}'
+            q = f'{q}+author-date%3A<{UNTIL.strftime("%Y-%m-%d")}'
         dependents_url = (
-            f'https://github.com/search?q="{q}"&type=commits')
+            f'https://github.com/search?q={q}&type=commits')
         for i in range(FAIL_RETRIES):
             result = self._request_url_with_auth_headers(dependents_url)
             if result.status_code == 200:
@@ -554,7 +555,7 @@ def get_repository_score(repo_stats, additional_params=None):
 def get_repository_params_from_raw_stats(repo_url, params=None, until=None):
     """Get repository's criticality_score based on raw signal data."""
     global UNTIL
-    if not UNTIL and until:
+    if until:
         UNTIL = until
 
     repo = get_repository(repo_url)
