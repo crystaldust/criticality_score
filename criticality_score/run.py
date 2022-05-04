@@ -37,8 +37,8 @@ _CACHED_GITHUB_TOKEN = None
 _CACHED_GITHUB_TOKEN_OBJ = None
 
 PARAMS = [
-    'description', 'created_since', 'updated_since', 'watchers_count',
-    'commit_frequency', 'recent_releases_count', 'dependents_count'
+    'description', 'created_since', 'watchers_count',
+    'recent_releases_count', 'dependents_count'
 ]
 
 # contributor_count
@@ -47,6 +47,9 @@ PARAMS = [
 # updated_issues_count
 # closed_issues_count
 # comment_frequency
+
+# commit_frequency
+# updated_since
 
 UNTIL: datetime.datetime = None
 
@@ -239,7 +242,8 @@ class GitHubRepository(Repository):
             last_commit_time = self._repo.get_commits(until=UNTIL)[0].commit.author.date
         else:
             last_commit_time = self.last_commit.commit.author.date
-        difference = datetime.datetime.utcnow() - last_commit_time
+        until = UNTIL if UNTIL else datetime.datetime.utcnow()
+        difference = until - last_commit_time
         return round(difference.days / 30)
 
     @property
